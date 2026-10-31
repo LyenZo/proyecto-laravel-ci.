@@ -1,4 +1,4 @@
-ame: CI Laravel
+name: CI Laravel
  
 on:
   push:
