@@ -43,4 +43,9 @@ class TareaTest extends TestCase
             ->assertOk()
             ->assertJsonPath('completada', true);
     }
+        public function totalConPropina(float $subtotal): float
+    {
+        return $this->calcularPropina($subtotal);
+    }
+
 }
