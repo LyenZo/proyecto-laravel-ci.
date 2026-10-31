@@ -43,9 +43,12 @@ class TareaTest extends TestCase
             ->assertOk()
             ->assertJsonPath('completada', true);
     }
-        public function totalConPropina(float $subtotal): float
+       public function test_un_titulo_demasiado_corto_devuelve_422(): void
     {
-        return $this->calcularPropina($subtotal);
+        $this->postJson('/tareas', ['titulo' => 'ab'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('titulo');
     }
+
 
 }
