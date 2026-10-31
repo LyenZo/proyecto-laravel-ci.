@@ -43,12 +43,11 @@ class TareaTest extends TestCase
             ->assertOk()
             ->assertJsonPath('completada', true);
     }
-       public function test_un_titulo_demasiado_corto_devuelve_422(): void
+
+    public function test_un_titulo_demasiado_corto_devuelve_422(): void
     {
         $this->postJson('/tareas', ['titulo' => 'ab'])
             ->assertStatus(422)
             ->assertJsonValidationErrors('titulo');
     }
-
-
 }
