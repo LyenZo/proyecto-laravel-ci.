@@ -87,11 +87,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.ci .env && php artisan key:generate
+      - name: Levantar la aplicación dentro del runner (entorno controlado)
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8000 &
+          sleep 5
       - uses: grafana/setup-k6-action@v1
-      - name: Ejecutar k6 contra STAGING (nunca producción)
+      - name: Ejecutar k6 contra el entorno de pruebas del runner
         run: k6 run tests/performance/load-test.js
         env:
-          BASE_URL: ${{ vars.STAGING_URL }}
+          BASE_URL: http://127.0.0.1:8000
  
   quality-gate:
     name: Quality gate
