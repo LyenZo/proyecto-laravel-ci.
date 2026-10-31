@@ -1,0 +1,113 @@
+ame: CI Laravel
+ 
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+ 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+ 
+jobs:
+  lint-static:
+    name: Estilo y análisis estático
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - name: Caché de Composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Laravel Pint (estilo)
+        run: vendor/bin/pint --test
+      - name: PHPStan (análisis estático)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+ 
+  tests:
+    name: Pruebas y cobertura
+    needs: lint-static
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: testing
+          MYSQL_ROOT_PASSWORD: secret
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping" --health-interval=10s
+          --health-timeout=5s --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: pcov
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: cp .env.ci .env && php artisan key:generate
+      - name: Migraciones
+        run: php artisan migrate --force
+      - name: Pruebas unitarias, integración y aceptación
+        run: php artisan test --coverage --min=70 --log-junit=junit.xml
+      - name: Resumen de métricas
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          r = ET.parse('junit.xml').getroot()
+          s = r if r.tag == 'testsuite' else r[0]
+          total = int(s.get('tests')); fail = int(s.get('failures')) + int(s.get('errors'))
+          skip = int(s.get('skipped', 0)); ok = total - fail - skip
+          pct = round(ok / total * 100, 1) if total else 0
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+              f.write(f"| Totales | Aprobadas | Fallidas | % aprobado |\n|---|---|---|---|\n")
+              f.write(f"| {total} | {ok} | {fail} | {pct}% |\n")
+          PY
+      - name: Subir reporte JUnit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-report
+          path: junit.xml
+ 
+  performance:
+    name: Rendimiento (entorno de pruebas)
+    needs: tests
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: grafana/setup-k6-action@v1
+      - name: Ejecutar k6 contra STAGING (nunca producción)
+        run: k6 run tests/performance/load-test.js
+        env:
+          BASE_URL: ${{ vars.STAGING_URL }}
+ 
+  quality-gate:
+    name: Quality gate
+    needs: [lint-static, tests, performance]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluar resultados
+        run: |
+          echo "lint-static: ${{ needs.lint-static.result }}"
+          echo "tests: ${{ needs.tests.result }}"
+          echo "performance: ${{ needs.performance.result }}"
+          if [ "${{ needs.lint-static.result }}" != "success" ] || \
+             [ "${{ needs.tests.result }}" != "success" ] || \
+             { [ "${{ needs.performance.result }}" != "success" ] && \
+               [ "${{ needs.performance.result }}" != "skipped" ]; }; then
+            echo "Quality gate NO superado"; exit 1
+          fi
+          echo "Quality gate superado"
