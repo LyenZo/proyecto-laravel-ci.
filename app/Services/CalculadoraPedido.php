@@ -6,7 +6,7 @@ use InvalidArgumentException;
 
 class CalculadoraPedido
 {
-    public const IVA = 0.10;
+    public const IVA = 0.16;
 
     public function aplicarDescuento(float $precio, float $porcentaje): float
     {
